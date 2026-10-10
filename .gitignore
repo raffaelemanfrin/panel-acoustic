@@ -1,10 +1,5 @@
-# ignore app cache folder
-.cache/
-
-# dati raccolti e file generati
 data/
+data_fake/
 truth.csv
-__pycache__/
 *.db
-*.db-wal
-*.db-shm
+__pycache__/
