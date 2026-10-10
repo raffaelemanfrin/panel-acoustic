@@ -19,6 +19,8 @@ void loop() {
       Serial.println(picco);
     }
 
+    Serial.println(analogRead(A1));
+
     picco = 0;
     delay(90);
   }
