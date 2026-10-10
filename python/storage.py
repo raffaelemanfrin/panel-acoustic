@@ -26,6 +26,21 @@ CREATE TABLE IF NOT EXISTS alarms (
     detail      TEXT                -- regola scattata o altro testo libero
 );
 CREATE INDEX IF NOT EXISTS idx_alarms_ts ON alarms(ts);
+
+-- ogni blocco classificato (anche calma, vento, pioggia): serve al grafico
+CREATE TABLE IF NOT EXISTS events (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts          REAL NOT NULL,
+    cls         TEXT NOT NULL,      -- classe del piezo
+    source      TEXT NOT NULL,      -- 'rules' | 'nn'
+    peak        INTEGER,
+    nn_alarm    INTEGER,            -- ingressi della logica (0/1)
+    light_fast  INTEGER,
+    light_slow  INTEGER,
+    outcome     TEXT NOT NULL,      -- 'allarme' | 'avviso' | '-'
+    latency_ms  REAL
+);
+CREATE INDEX IF NOT EXISTS idx_events_ts ON events(ts);
 """
 
 
@@ -48,6 +63,27 @@ class AlarmStore:
                 (time.time() if ts is None else ts, cls, source, confidence, peak, latency_ms, detail),
             )
             return cur.lastrowid
+
+    def add_event(self, cls: str, source: str, outcome: str, peak: Optional[int] = None,
+                  nn_alarm: Optional[bool] = None, light_fast: Optional[bool] = None,
+                  light_slow: Optional[bool] = None, latency_ms: Optional[float] = None,
+                  ts: Optional[float] = None) -> int:
+        b = lambda v: None if v is None else int(bool(v))  # noqa: E731
+        with self._lock, self._db:
+            cur = self._db.execute(
+                "INSERT INTO events (ts, cls, source, peak, nn_alarm, light_fast, light_slow, outcome, latency_ms) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (time.time() if ts is None else ts, cls, source, peak, b(nn_alarm), b(light_fast),
+                 b(light_slow), outcome, latency_ms),
+            )
+            return cur.lastrowid
+
+    def events_since(self, seconds: float) -> List[dict]:
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT * FROM events WHERE ts >= ? ORDER BY ts", (time.time() - seconds,)
+            ).fetchall()
+        return [dict(r) for r in rows]
 
     def last(self, n: int = 20) -> List[dict]:
         """Ultimi n allarmi, dal piu' recente."""

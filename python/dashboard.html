@@ -1,0 +1,282 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Solar-Acoustics</title>
+<style>
+:root {
+  color-scheme: light;
+  --page: #f9f9f7; --surface: #fcfcfb; --ink: #0b0b0b; --ink-2: #52514e; --muted: #898781;
+  --grid: #e1e0d9; --axis: #c3c2b7; --border: rgba(11,11,11,0.10);
+  --critical: #d03b3b; --warning: #fab219; --good: #0ca30c; --none: #b4b2aa;
+  --critical-wash: rgba(208,59,59,0.10); --warning-wash: rgba(250,178,25,0.16); --good-wash: rgba(12,163,12,0.08);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --page: #0d0d0d; --surface: #1a1a19; --ink: #f0efec; --ink-2: #c3c2b7; --muted: #898781;
+    --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,0.10); --none: #5d5c58;
+    --critical-wash: rgba(208,59,59,0.22); --warning-wash: rgba(250,178,25,0.16); --good-wash: rgba(12,163,12,0.14);
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--page); color: var(--ink);
+  font: 15px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; }
+main { max-width: 1100px; margin: 0 auto; padding: 20px 16px 40px; }
+header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+h1 { font-size: 20px; margin: 0; letter-spacing: -0.01em; }
+h2 { font-size: 14px; font-weight: 600; margin: 0 0 10px; color: var(--ink-2); }
+.conn { font-size: 13px; color: var(--muted); }
+.conn b { font-weight: 600; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px; }
+
+#status { margin: 16px 0; display: flex; align-items: center; gap: 16px; padding: 18px 20px;
+  border-radius: 12px; border: 1px solid var(--border); background: var(--good-wash); }
+#status .icon { width: 44px; height: 44px; flex: none; border-radius: 50%; display: grid; place-items: center;
+  font-weight: 700; font-size: 22px; color: #fff; background: var(--good); }
+#status .what { font-size: 26px; font-weight: 700; letter-spacing: -0.01em; }
+#status .why { color: var(--ink-2); font-size: 14px; }
+#status.alarm { background: var(--critical-wash); }
+#status.alarm .icon { background: var(--critical); animation: pulse 1s ease-in-out infinite; }
+#status.warn { background: var(--warning-wash); }
+#status.warn .icon { background: var(--warning); color: #0b0b0b; }
+@keyframes pulse { 50% { transform: scale(1.12); } }
+@media (prefers-reduced-motion: reduce) { #status.alarm .icon { animation: none; } }
+
+.tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 16px; }
+.tile .label { font-size: 13px; color: var(--ink-2); }
+.tile .value { font-size: 30px; font-weight: 650; margin-top: 2px; }
+.tile .sub { font-size: 12px; color: var(--muted); min-height: 1.2em; }
+
+.chart-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 6px; }
+.legend { display: flex; gap: 14px; font-size: 13px; color: var(--ink-2); flex-wrap: wrap; }
+.legend span::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 50%;
+  margin-right: 6px; vertical-align: -1px; background: var(--c); }
+.seg { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+.seg button { border: 0; background: transparent; color: var(--ink-2); font: inherit; font-size: 13px; padding: 4px 10px; cursor: pointer; }
+.seg button[aria-pressed="true"] { background: var(--grid); color: var(--ink); font-weight: 600; }
+#chart { position: relative; }
+#chart svg { display: block; width: 100%; height: 280px; }
+#chart text { font-size: 11px; fill: var(--muted); font-variant-numeric: tabular-nums; }
+#chart .lbl { fill: var(--ink); font-size: 12px; font-weight: 600; }
+#tip { position: absolute; pointer-events: none; background: var(--surface); border: 1px solid var(--border);
+  border-radius: 8px; padding: 8px 10px; font-size: 13px; box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+  display: none; white-space: nowrap; z-index: 2; }
+#tip .t { color: var(--muted); font-size: 12px; }
+.empty { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); font-size: 14px; }
+
+.cols { display: grid; grid-template-columns: 1.4fr 1fr; gap: 12px; margin-top: 16px; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th { text-align: left; font-weight: 600; color: var(--ink-2); border-bottom: 1px solid var(--grid); padding: 6px 6px; }
+td { white-space: nowrap; padding: 6px 6px; border-bottom: 1px solid var(--grid); font-variant-numeric: tabular-nums; }
+td.num, th.num { text-align: right; }
+.pill { display: inline-flex; align-items: center; gap: 5px; }
+.pill::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--c); }
+.scroll { overflow-x: auto; }
+@media (max-width: 760px) {
+  .tiles { grid-template-columns: repeat(2, 1fr); }
+  .cols { grid-template-columns: 1fr; }
+  #status .what { font-size: 21px; }
+}
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Solar-Acoustics · pannello 1</h1>
+    <div class="conn" id="conn">connessione…</div>
+  </header>
+
+  <section id="status" role="status" aria-live="assertive">
+    <div class="icon" id="s-icon">✓</div>
+    <div><div class="what" id="s-what">In ascolto</div><div class="why" id="s-why">nessun evento recente</div></div>
+  </section>
+
+  <section class="tiles">
+    <div class="card tile"><div class="label">Allarmi, ultima ora</div><div class="value" id="t-alarms">–</div><div class="sub" id="t-alarms-sub"></div></div>
+    <div class="card tile"><div class="label">Avvisi, ultima ora</div><div class="value" id="t-warn">–</div><div class="sub">calo lento di luce</div></div>
+    <div class="card tile"><div class="label">Eventi nella finestra</div><div class="value" id="t-events">–</div><div class="sub" id="t-events-sub"></div></div>
+    <div class="card tile"><div class="label">Latenza ultimo allarme</div><div class="value" id="t-lat">–</div><div class="sub">dal trigger alla decisione</div></div>
+  </section>
+
+  <section class="card">
+    <div class="chart-head">
+      <h2 style="margin:0">Eventi sul pannello: picco del piezo</h2>
+      <div class="legend">
+        <span style="--c: var(--critical)">Allarme</span>
+        <span style="--c: var(--warning)">Avviso</span>
+        <span style="--c: var(--none)">Nessuna azione</span>
+      </div>
+      <div class="seg" role="group" aria-label="Finestra temporale">
+        <button data-w="60">1 min</button><button data-w="300" aria-pressed="true">5 min</button><button data-w="900">15 min</button>
+      </div>
+    </div>
+    <div id="chart"><svg id="svg" aria-label="Eventi nel tempo"></svg><div id="tip"></div><div class="empty" id="empty">Nessun evento nella finestra</div></div>
+  </section>
+
+  <section class="cols">
+    <div class="card"><h2>Ultimi allarmi</h2><div class="scroll"><table>
+      <thead><tr><th>Ora</th><th>Classe</th><th class="num">Picco</th><th class="num">Latenza</th><th>Logica</th></tr></thead>
+      <tbody id="alarms"></tbody></table></div></div>
+    <div class="card"><h2>Ultimi eventi</h2><div class="scroll"><table>
+      <thead><tr><th>Ora</th><th>Classe</th><th>A F S</th><th>Esito</th></tr></thead>
+      <tbody id="events"></tbody></table></div></div>
+  </section>
+</main>
+
+<script>
+const BANNER_S = 10;           // per quanti secondi resta il banner di allarme/avviso
+let windowS = 300;
+let skew = 0;                  // orologio server - orologio browser
+let last = null;
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const hms = ts => new Date(ts * 1000).toLocaleTimeString("it-IT");
+const COLOR = {"allarme": "var(--critical)", "avviso": "var(--warning)", "-": "var(--none)"};
+const NAME = {"allarme": "Allarme", "avviso": "Avviso", "-": "nessuna"};
+
+document.querySelectorAll(".seg button").forEach(b => b.onclick = () => {
+  windowS = +b.dataset.w;
+  document.querySelectorAll(".seg button").forEach(x => x.setAttribute("aria-pressed", x === b));
+  poll();
+});
+
+async function poll() {
+  try {
+    const r = await fetch(`/api/state?window=${windowS}`, {cache: "no-store"});
+    last = await r.json();
+    skew = last.now - Date.now() / 1000;
+    $("conn").innerHTML = last.db ? `<b style="color:var(--good)">●</b> collegato · ${hms(last.now)}`
+                                  : `<b style="color:var(--warning)">●</b> registro non ancora creato: avvia daemon.py`;
+    render(last);
+  } catch (e) {
+    $("conn").innerHTML = `<b style="color:var(--critical)">●</b> dashboard non raggiungibile`;
+  }
+}
+
+function render(s) {
+  const now = Date.now() / 1000 + skew;
+  // banner: allarme recente > avviso recente > in ascolto
+  const a = s.alarms[0];
+  const w = [...s.events].reverse().find(e => e.outcome === "avviso");
+  const st = $("status");
+  if (a && now - a.ts < BANNER_S) {
+    st.className = "alarm"; $("s-icon").textContent = "!";
+    $("s-what").textContent = `ALLARME · ${a.cls.toUpperCase()}`;
+    $("s-why").textContent = `${hms(a.ts)} · picco ${a.peak ?? "–"} · ${a.detail ?? ""}`;
+  } else if (w && now - w.ts < BANNER_S) {
+    st.className = "warn"; $("s-icon").textContent = "!";
+    $("s-what").textContent = "AVVISO · calo lento di luce";
+    $("s-why").textContent = `${hms(w.ts)} · possibile neve o sporco sul pannello (nessuna sirena)`;
+  } else {
+    st.className = ""; $("s-icon").textContent = "✓";
+    $("s-what").textContent = "In ascolto";
+    $("s-why").textContent = a ? `ultimo allarme ${hms(a.ts)} (${a.cls})` : "nessun allarme registrato";
+  }
+
+  const tot = Object.values(s.alarms_hour).reduce((x, y) => x + y, 0);
+  $("t-alarms").textContent = tot;
+  $("t-alarms-sub").textContent = Object.entries(s.alarms_hour).map(([k, v]) => `${k} ${v}`).join(" · ");
+  $("t-warn").textContent = s.warnings_hour;
+  $("t-events").textContent = s.events_window;
+  $("t-events-sub").textContent = `ultimi ${s.window >= 120 ? s.window / 60 + " min" : s.window + " s"}`;
+  $("t-lat").textContent = a && a.latency_ms != null ? `${Math.round(a.latency_ms)} ms` : "–";
+
+  $("alarms").innerHTML = s.alarms.slice(0, 8).map(r =>
+    `<tr><td>${hms(r.ts)}</td><td><span class="pill" style="--c:var(--critical)">${esc(r.cls)}</span></td>
+     <td class="num">${r.peak ?? "–"}</td><td class="num">${r.latency_ms != null ? Math.round(r.latency_ms) + " ms" : "–"}</td>
+     <td>${esc((r.detail || "").split("| ")[1] || "")}</td></tr>`).join("")
+    || `<tr><td colspan="5" style="color:var(--muted)">nessun allarme</td></tr>`;
+  $("events").innerHTML = [...s.events].reverse().slice(0, 8).map(e =>
+    `<tr><td>${hms(e.ts)}</td><td>${esc(e.cls)}</td><td>${e.nn_alarm} ${e.light_fast} ${e.light_slow}</td>
+     <td><span class="pill" style="--c:${COLOR[e.outcome]}">${NAME[e.outcome]}</span></td></tr>`).join("")
+    || `<tr><td colspan="4" style="color:var(--muted)">nessun evento</td></tr>`;
+
+  drawChart(s, now);
+}
+
+function drawChart(s, now) {
+  const svg = $("svg");
+  const W = svg.clientWidth || 800, H = 280;
+  const m = {l: 44, r: 20, t: 18, b: 26};
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  const t0 = now - s.window;
+  const ev = s.events.filter(e => e.ts >= t0);
+  $("empty").style.display = ev.length ? "none" : "grid";
+
+  const peaks = ev.map(e => e.peak ?? 0);
+  let lo = Math.min(...peaks, 512), hi = Math.max(...peaks, 600);
+  const step = niceStep((hi - lo) / 4);
+  lo = Math.floor(lo / step) * step; hi = Math.ceil(hi / step) * step;
+  const x = t => m.l + (t - t0) / s.window * (W - m.l - m.r);
+  const y = v => H - m.b - (v - lo) / (hi - lo || 1) * (H - m.t - m.b);
+
+  let g = "";
+  for (let v = lo; v <= hi + 1e-9; v += step) {
+    g += `<line x1="${m.l}" x2="${W - m.r}" y1="${y(v)}" y2="${y(v)}" stroke="var(--grid)" stroke-width="1"/>`;
+    g += `<text x="${m.l - 6}" y="${y(v) + 4}" text-anchor="end">${v}</text>`;
+  }
+  const tick = s.window <= 60 ? 10 : s.window <= 300 ? 60 : 180;
+  for (let k = 0; k * tick <= s.window; k++) {
+    const t = now - k * tick;
+    const lbl = k === 0 ? "ora" : `-${k * tick >= 60 ? (k * tick / 60) + " min" : k * tick + " s"}`;
+    g += `<text x="${x(t)}" y="${H - 6}" text-anchor="${k === 0 ? "end" : "middle"}">${lbl}</text>`;
+  }
+  g += `<line x1="${m.l}" x2="${W - m.r}" y1="${H - m.b}" y2="${H - m.b}" stroke="var(--axis)"/>`;
+  g += `<text x="${m.l - 6}" y="10" text-anchor="end">picco</text>`;
+
+  // prima i punti senza azione, poi avvisi, poi allarmi sopra a tutto
+  const order = {"-": 0, "avviso": 1, "allarme": 2};
+  const sorted = ev.map((e, i) => ({e, i})).sort((a, b) => order[a.e.outcome] - order[b.e.outcome]);
+  let labels = 0;
+  for (const {e, i} of sorted) {
+    const big = e.outcome === "allarme";
+    const r = big ? 7 : 5;
+    g += `<circle cx="${x(e.ts)}" cy="${y(e.peak ?? lo)}" r="${r}" fill="${COLOR[e.outcome]}" stroke="var(--surface)" stroke-width="2" data-i="${i}"/>`;
+  }
+  // etichetta diretta solo sull'ultimo allarme (le altre classi sono nel tooltip e in tabella)
+  const la = ev.filter(e => e.outcome === "allarme").slice(-1)[0];
+  if (la) {
+    const lx = x(la.ts), near = lx > W - m.r - 60;
+    g += `<text class="lbl" x="${near ? lx - 10 : lx}" y="${y(la.peak ?? lo) - 12}" text-anchor="${near ? "end" : "middle"}">${esc(la.cls)}</text>`;
+  }
+  svg.innerHTML = g;
+  svg._ev = ev; svg._x = x; svg._y = y;
+}
+
+function niceStep(raw) {
+  const p = Math.pow(10, Math.floor(Math.log10(Math.max(raw, 1))));
+  for (const k of [1, 2, 5, 10]) if (raw <= k * p) return k * p;
+  return 10 * p;
+}
+
+// tooltip: il punto piu' vicino entro 24 px
+const svg = $("svg"), tip = $("tip");
+svg.addEventListener("mousemove", ev => {
+  const pts = svg._ev || [];
+  const box = svg.getBoundingClientRect();
+  const sx = (ev.clientX - box.left) * (svg.viewBox.baseVal.width / box.width);
+  const sy = (ev.clientY - box.top) * (svg.viewBox.baseVal.height / box.height);
+  let best = null, bd = 24 * 24;
+  for (const e of pts) {
+    const dx = svg._x(e.ts) - sx, dy = svg._y(e.peak ?? 0) - sy, d = dx * dx + dy * dy;
+    if (d < bd) { bd = d; best = e; }
+  }
+  if (!best) { tip.style.display = "none"; return; }
+  tip.innerHTML = `<div class="t">${hms(best.ts)}</div><b>${esc(best.cls)}</b> · picco ${best.peak}<br>
+    A=${best.nn_alarm} F=${best.light_fast} S=${best.light_slow} → <span class="pill" style="--c:${COLOR[best.outcome]}">${NAME[best.outcome]}</span>`;
+  tip.style.display = "block";
+  const px = ev.clientX - box.left, wTip = tip.offsetWidth;
+  tip.style.left = Math.min(Math.max(px - wTip / 2, 0), box.width - wTip) + "px";
+  tip.style.top = Math.max(ev.clientY - box.top - tip.offsetHeight - 14, 0) + "px";
+});
+svg.addEventListener("mouseleave", () => tip.style.display = "none");
+window.addEventListener("resize", () => last && drawChart(last, Date.now() / 1000 + skew));
+
+poll();
+setInterval(poll, 1000);
+</script>
+</body>
+</html>

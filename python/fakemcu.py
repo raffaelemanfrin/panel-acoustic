@@ -31,8 +31,11 @@ def impulse(i, t0, amp, decay_ms, freq_hz):
     return amp * math.exp(-t / decay_ms) * math.sin(2 * math.pi * freq_hz * t / 1000.0)
 
 
-def gen_block(cls, rng, adc_bits=10, n=SAMPLES_PER_BLOCK):
-    """Ritorna le righe (indice, piezo, luce). Ampiezze pensate su scala 10 bit."""
+def gen_block(cls, rng, adc_bits=10, n=SAMPLES_PER_BLOCK, shadow=False):
+    """Ritorna le righe (indice, piezo, luce). Ampiezze pensate su scala 10 bit.
+
+    shadow=True aggiunge un'ombra rapida al trigger (mano sul vetro) a qualunque classe.
+    """
     mid = 2 ** (adc_bits - 1)
     full = 2 ** adc_bits - 1
     k = 2 ** adc_bits / 1024.0
@@ -69,6 +72,8 @@ def gen_block(cls, rng, adc_bits=10, n=SAMPLES_PER_BLOCK):
                 v += 90 * math.sin(2 * math.pi * dist_f * (i - T) * SAMPLE_PERIOD_MS / 1000.0)
             if T <= i < T + 40:
                 light -= 20  # calo veloce (ombra)
+        if shadow and i >= T:
+            light -= 20  # mano che resta sul pannello
         for h in hits:
             v += impulse(i, *h)
 
