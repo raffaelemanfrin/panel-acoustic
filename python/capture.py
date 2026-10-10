@@ -22,7 +22,7 @@ def parse_args():
     src = p.add_mutually_exclusive_group(required=True)
     src.add_argument("--port", help="porta seriale lato Linux")
     src.add_argument("--input", help="file con il flusso registrato ('-' = stdin)")
-    p.add_argument("--baud", type=int, default=115200)
+    p.add_argument("--baud", type=int, default=230400)
     p.add_argument("--label", required=True, help="classe (senza punti): calma, vento, grandine, ...")
     p.add_argument("--category", choices=["training", "testing"], default="training")
     p.add_argument("--out", default="data", help="cartella base di output")
