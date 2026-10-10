@@ -2,7 +2,8 @@
 """Cattura eventi dalla MCU e li salva come CSV pronti per Edge Impulse.
 
 Esempi:
-    python capture.py --port /dev/ttyMCU --label grandine --category training --n 30
+    python capture.py --bridge --label grandine --category training --n 30   # UNO Q
+    python capture.py --bridge --label calma --force 30      # blocchi forzati: calma, vento
     python capture.py --port /dev/ttyMCU --label grandine --category testing --n 10
     python fake_mcu.py --n 5 | python capture.py --input - --label colpo   # senza scheda
 
@@ -22,13 +23,16 @@ def parse_args():
     src = p.add_mutually_exclusive_group(required=True)
     src.add_argument("--port", help="porta seriale lato Linux")
     src.add_argument("--input", help="file con il flusso registrato ('-' = stdin)")
+    src.add_argument("--bridge", action="store_true", help="UNO Q: blocchi via arduino-router")
     p.add_argument("--baud", type=int, default=230400)
+    p.add_argument("--force", type=int, default=0,
+                   help="(--bridge) chiede alla MCU N blocchi senza trigger, uno al secondo: per calma e vento")
     p.add_argument("--label", required=True, help="classe (senza punti): calma, vento, grandine, ...")
     p.add_argument("--category", choices=["training", "testing"], default="training")
     p.add_argument("--out", default="data", help="cartella base di output")
     p.add_argument("--samples", type=int, default=SAMPLES_PER_BLOCK)
     p.add_argument("--time-col", choices=["index", "micros"], default="index")
-    p.add_argument("--adc-bits", type=int, default=0, help="bit ADC del piezo (controllo di range)")
+    p.add_argument("--adc-bits", type=int, default=12, help="bit ADC del piezo (controllo di range, 0 = nessuno)")
     p.add_argument("--n", type=int, default=0, help="stop dopo N eventi validi (0 = fino a Ctrl+C / fine file)")
     p.add_argument("--block-timeout", type=float, default=5.0)
     return p.parse_args()
@@ -62,11 +66,15 @@ def main():
 
     parser = BlockParser(args.samples, args.time_col, args.adc_bits, args.block_timeout)
     saved = 0
-    origin = args.port or args.input
+    origin = args.port or args.input or "Bridge"
     print(f"In ascolto su {origin} -> {folder}/{args.label}.NN.csv (Ctrl+C per fermare)")
 
     try:
-        for line in open_lines(args.port, args.input, args.baud):
+        if args.force and not args.bridge:
+            sys.exit("--force funziona solo con --bridge (lo chiede alla MCU)")
+        if args.force and not args.n:
+            args.n = args.force
+        for line in open_lines(args.port, args.input, args.baud, bridge=args.bridge, force=args.force):
             result = parser.feed(line)
             if isinstance(result, Rejected):
                 print(f"  ! blocco scartato: {result.reason}")

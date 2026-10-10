@@ -3,3 +3,4 @@ data_fake/
 truth.csv
 *.db
 __pycache__/
+sketch/test/capture_sim

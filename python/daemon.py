@@ -2,7 +2,8 @@
 """Demone di rilevamento: righe MCU -> parser -> classificatore -> registro allarmi.
 
 Esempi:
-    python daemon.py --port /dev/ttyMCU                       # con la scheda
+    python daemon.py --bridge                                 # UNO Q: dati dalla MCU via arduino-router
+    python daemon.py --port /dev/ttyACM0                      # MCU su una seriale vera (altre schede)
     python fakemcu.py --n 30 --interval 0.5 --corrupt-rate 0.2 | python daemon.py --input -
     python daemon.py --input registrazione.txt --db prova.db --print-all
     python fakemcu.py --n 200 --order random --interval 1 | python daemon.py --input - --siren silent
@@ -222,8 +223,10 @@ class Daemon:
     """Collega Pipeline a una sorgente di righe, con riconnessione e arresto pulito."""
 
     def __init__(self, pipeline: Pipeline, port: Optional[str] = None, input_path: Optional[str] = None,
-                 baud: int = 230400, stats_every_s: float = 60.0, retry_max_s: float = 30.0):
+                 baud: int = 230400, stats_every_s: float = 60.0, retry_max_s: float = 30.0,
+                 bridge: bool = False):
         self.pipeline = pipeline
+        self.bridge = bridge
         self.port = port
         self.input_path = input_path
         self.baud = baud
@@ -239,7 +242,7 @@ class Daemon:
         last_stats = time.monotonic()
         while not self._stop:
             try:
-                for line in open_lines(self.port, self.input_path, self.baud):
+                for line in open_lines(self.port, self.input_path, self.baud, bridge=self.bridge):
                     retry = 1.0  # la sorgente funziona: azzera l'attesa
                     self.pipeline.handle_line(line)
                     if self.stats_every_s and time.monotonic() - last_stats >= self.stats_every_s:
@@ -249,10 +252,11 @@ class Daemon:
                         break
                 if self.input_path is not None:
                     break  # fine file / stdin: il lavoro e' finito
-            except OSError as e:  # include serial.SerialException
-                if self.port is None:
+            except (OSError, ConnectionError) as e:  # include serial.SerialException
+                if self.input_path is not None:
                     raise
-                log.error("seriale %s non disponibile (%s), riprovo tra %.0f s", self.port, e, retry)
+                log.error("sorgente %s non disponibile (%s), riprovo tra %.0f s",
+                          self.port or "Bridge", e, retry)
                 self._sleep(retry)
                 retry = min(retry * 2, self.retry_max_s)
 
@@ -267,10 +271,13 @@ def parse_args(argv=None):
     src = p.add_mutually_exclusive_group(required=True)
     src.add_argument("--port", help="porta seriale lato Linux")
     src.add_argument("--input", help="file con il flusso registrato ('-' = stdin)")
-    p.add_argument("--baud", type=int, default=230400)
+    src.add_argument("--bridge", action="store_true",
+                     help="UNO Q: blocchi dalla MCU via arduino-router (notifiche pa_lines)")
+    p.add_argument("--baud", type=int, default=230400, help="solo con --port")
     p.add_argument("--db", default=str(DEFAULT_DB), help="file SQLite (':memory:' per non salvare)")
     p.add_argument("--time-col", choices=["index", "micros"], default="index")
-    p.add_argument("--adc-bits", type=int, default=10, help="bit ADC del piezo (range e scala soglie)")
+    p.add_argument("--adc-bits", type=int, default=12,
+                   help="bit ADC del piezo (range e scala soglie); lo sketch usa 12")
     p.add_argument("--block-timeout", type=float, default=5.0)
     p.add_argument("--cooldown", type=float, default=10.0,
                    help="secondi minimi tra due allarmi della stessa classe (0 = registra tutti)")
@@ -282,7 +289,7 @@ def parse_args(argv=None):
     o = p.add_argument_group("uscite (Media Carrier)")
     o.add_argument("--siren", choices=["auto", "on", "silent", "off"], default="auto",
                    help="on = audio + LED; silent = solo LED (e sospensione); off = nessuna uscita; "
-                        "auto = on con --port, off con --input (un file si legge in un attimo e la "
+                        "auto = on con --port/--bridge, off con --input (un file si legge in un attimo e la "
                         "sospensione a tempo reale scarterebbe quasi tutto)")
     o.add_argument("--siren-s", type=float, default=3.0, help="durata della sirena in secondi")
     o.add_argument("--guard", type=float, default=1.0,
@@ -299,7 +306,7 @@ def main(argv=None) -> int:
     th = Thresholds(adc_bits=args.adc_bits)
     parser = BlockParser(SAMPLES_PER_BLOCK, args.time_col, args.adc_bits, args.block_timeout)
     store = AlarmStore(args.db)
-    siren = args.siren if args.siren != "auto" else ("on" if args.port else "off")
+    siren = args.siren if args.siren != "auto" else ("on" if args.port or args.bridge else "off")
     out = None
     if siren != "off":
         from outputs import MediaCarrierOutput
@@ -308,12 +315,14 @@ def main(argv=None) -> int:
                         logic=Logic(args.shadow_alarm), light=lambda b: light_flags(b, th),
                         on_alarm=out.alarm if out else None, on_warning=out.warning if out else None,
                         guard_s=args.guard)
-    daemon = Daemon(pipeline, args.port, args.input, args.baud, args.stats_every)
+    daemon = Daemon(pipeline, args.port, args.input, args.baud, args.stats_every, bridge=args.bridge)
 
-    signal.signal(signal.SIGTERM, daemon.stop)
-    signal.signal(signal.SIGINT, daemon.stop)
+    import threading
+    if threading.current_thread() is threading.main_thread():  # in App Lab gira in un thread
+        signal.signal(signal.SIGTERM, daemon.stop)
+        signal.signal(signal.SIGINT, daemon.stop)
     log.info("avvio: sorgente %s, db %s, allarmi su %s, ombra senza urto = %s, sirena %s",
-             args.port or args.input, args.db, sorted(pipeline.alarm_classes),
+             args.port or args.input or "Bridge", args.db, sorted(pipeline.alarm_classes),
              "allarme" if args.shadow_alarm else "no", siren)
     try:
         daemon.run()
