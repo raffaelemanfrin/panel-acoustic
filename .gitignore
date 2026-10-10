@@ -1,0 +1,8 @@
+# ignore app cache folder
+.cache/
+
+# dati raccolti e file generati
+data/
+truth.csv
+__pycache__/
+*.db
