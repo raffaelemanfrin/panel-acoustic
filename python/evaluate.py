@@ -10,6 +10,7 @@ Sorgenti (una delle due):
     python evaluate.py --data data/testing data/training/colpo.03.csv --baud 230400
     python evaluate.py --fake --n 200 --seed 1 --shadow-rate 0.3
     python evaluate.py --data data/testing --triggers-per-hour 40 --shadow-alarm
+    python evaluate.py --data data/testing --classifier nn --model modello.eim   # rete vs regole
 
 Stampa:
   - matrice di confusione del classificatore del piezo (= ingresso nn_alarm);
@@ -186,18 +187,24 @@ def parse_args(argv=None):
     p.add_argument("--triggers-per-hour", type=float, default=None,
                    help="trigger/ora NON di allarme in campo (da misurare); abilita i falsi allarmi/ora")
     p.add_argument("-v", "--verbose", action="store_true", help="elenca i blocchi sbagliati")
+    from nn import add_arguments
+    add_arguments(p)
     return p.parse_args(argv)
 
 
 def main(argv=None):
     args = parse_args(argv)
     th = Thresholds(adc_bits=args.adc_bits)
-    # Quando arriva la rete: un classificatore con la stessa firma (Block -> Detection)
-    classifier = lambda b: classify(b, th)  # noqa: E731
+    from nn import build_classifier
+    classifier, name, close = build_classifier(args.classifier, th, args.model, args.min_conf)
+    print(f"Classificatore: {name}")
     samples = (from_csv(args.data, args.adc_bits) if args.data
                else from_fake(args.n, args.seed, args.adc_bits, args.shadow_rate))
-    result = evaluate(samples, classifier, lambda b: light_flags(b, th), Logic(args.shadow_alarm),
-                      args.verbose)
+    try:
+        result = evaluate(samples, classifier, lambda b: light_flags(b, th), Logic(args.shadow_alarm),
+                          args.verbose)
+    finally:
+        close()
     print_report(*result, args)
 
 

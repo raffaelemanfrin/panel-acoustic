@@ -284,6 +284,8 @@ def parse_args(argv=None):
     p.add_argument("--stats-every", type=float, default=60.0, help="secondi tra due righe di statistiche (0 = mai)")
     p.add_argument("--print-all", action="store_true", help="logga ogni blocco, non solo gli allarmi")
     p.add_argument("--quiet", action="store_true", help="solo allarmi ed errori")
+    from nn import add_arguments
+    add_arguments(p)
     p.add_argument("--shadow-alarm", action="store_true",
                    help="ombra senza urto = allarme (default: no, vedi logic.py)")
     o = p.add_argument_group("uscite (Media Carrier)")
@@ -311,7 +313,9 @@ def main(argv=None) -> int:
     if siren != "off":
         from outputs import MediaCarrierOutput
         out = MediaCarrierOutput(args.siren_s, sound=(siren == "on"), siren_cmd=args.siren_cmd)
-    pipeline = Pipeline(store, parser, classifier=lambda b: classify(b, th), cooldown_s=args.cooldown,
+    from nn import build_classifier
+    classifier, source_name, close_classifier = build_classifier(args.classifier, th, args.model, args.min_conf)
+    pipeline = Pipeline(store, parser, classifier=classifier, source_name=source_name, cooldown_s=args.cooldown,
                         logic=Logic(args.shadow_alarm), light=lambda b: light_flags(b, th),
                         on_alarm=out.alarm if out else None, on_warning=out.warning if out else None,
                         guard_s=args.guard)
@@ -321,6 +325,7 @@ def main(argv=None) -> int:
     if threading.current_thread() is threading.main_thread():  # in App Lab gira in un thread
         signal.signal(signal.SIGTERM, daemon.stop)
         signal.signal(signal.SIGINT, daemon.stop)
+    log.info("classificatore: %s", source_name)
     log.info("avvio: sorgente %s, db %s, allarmi su %s, ombra senza urto = %s, sirena %s",
              args.port or args.input or "Bridge", args.db, sorted(pipeline.alarm_classes),
              "allarme" if args.shadow_alarm else "no", siren)
@@ -332,6 +337,7 @@ def main(argv=None) -> int:
     finally:
         if out is not None:
             out.stop()
+        close_classifier()
         store.close()
         log.warning("fine: %s", pipeline.stats.summary())
     return 0

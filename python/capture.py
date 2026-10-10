@@ -9,6 +9,11 @@ Esempi:
 
 Output: data/<category>/<label>.NN.csv con colonne timestamp(ms),piezo,luce
 Upload: edge-impulse-uploader --category training data/training/*.csv
+
+Con --force si salvano SOLO i blocchi forzati (preceduti da "#FORCED"): un
+evento vero che scatta durante una raccolta di "calma" non finisce nella
+classe sbagliata. Senza --force, al contrario, i blocchi forzati si scartano.
+Dentro App Lab la raccolta si pilota con raccolta.json (vedi raccolta.py).
 """
 import argparse
 import sys
@@ -18,7 +23,7 @@ from protocol import SAMPLES_PER_BLOCK, Block, BlockParser, Rejected
 from source import open_lines
 
 
-def parse_args():
+def parse_args(argv=None):
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     src = p.add_mutually_exclusive_group(required=True)
     src.add_argument("--port", help="porta seriale lato Linux")
@@ -35,7 +40,7 @@ def parse_args():
     p.add_argument("--adc-bits", type=int, default=12, help="bit ADC del piezo (controllo di range, 0 = nessuno)")
     p.add_argument("--n", type=int, default=0, help="stop dopo N eventi validi (0 = fino a Ctrl+C / fine file)")
     p.add_argument("--block-timeout", type=float, default=5.0)
-    return p.parse_args()
+    return p.parse_args(argv)
 
 
 def next_number(folder: Path, label: str) -> int:
@@ -56,39 +61,83 @@ def save(block: Block, folder: Path, label: str) -> Path:
     return path
 
 
-def main():
-    args = parse_args()
-    if "." in args.label:
-        sys.exit("La label non deve contenere punti (Edge Impulse la ricava dal nome file prima del primo punto).")
+FORCED_MARK = "#FORCED"
 
-    folder = Path(args.out) / args.category
-    folder.mkdir(parents=True, exist_ok=True)
 
+class Session:
+    """Una raccolta: riga per riga, salva i blocchi validi come CSV finche' non arriva a n.
+
+    forced_only=True  -> tiene solo i blocchi forzati (calma, vento)
+    forced_only=False -> tiene solo i blocchi da trigger vero
+    forced_only=None  -> tiene tutto (file registrati, generatore finto)
+    """
+
+    def __init__(self, label: str, category: str = "training", out="data", n: int = 0,
+                 forced_only=None, parser: BlockParser = None, log=print):
+        if not label or "." in label:
+            raise ValueError("label vuota o con punti (Edge Impulse la ricava dal nome file prima del primo punto)")
+        self.label = label
+        self.folder = Path(out) / category
+        self.folder.mkdir(parents=True, exist_ok=True)
+        self.n = n
+        self.forced_only = forced_only
+        self.parser = parser or BlockParser()
+        self.log = log
+        self.saved = 0
+        self.skipped = 0
+        self._forced_next = False
+
+    @property
+    def done(self) -> bool:
+        return bool(self.n) and self.saved >= self.n
+
+    def feed(self, line: str) -> bool:
+        """True quando la sessione ha raggiunto n blocchi."""
+        if line.strip() == FORCED_MARK:
+            self._forced_next = True
+            return False
+        result = self.parser.feed(line)
+        if isinstance(result, Rejected):
+            self.log(f"  ! blocco scartato: {result.reason}")
+            self._forced_next = False
+        elif isinstance(result, Block):
+            forced, self._forced_next = self._forced_next, False
+            if self.forced_only is not None and forced != self.forced_only:
+                self.skipped += 1
+                what = "da trigger" if self.forced_only else "forzato"
+                self.log(f"  - blocco {what} ignorato in questa raccolta")
+                return False
+            path = save(result, self.folder, self.label)
+            self.saved += 1
+            self.log(f"  ok {path.name}  (picco piezo {max(result.piezo)})  "
+                     f"[{self.saved}{'/' + str(self.n) if self.n else ''}]")
+        return self.done
+
+
+def main(argv=None):
+    args = parse_args(argv)
+    if args.force and not args.bridge:
+        sys.exit("--force funziona solo con --bridge (lo chiede alla MCU)")
+    if args.force and not args.n:
+        args.n = args.force
     parser = BlockParser(args.samples, args.time_col, args.adc_bits, args.block_timeout)
-    saved = 0
+    forced_only = (args.force > 0) if args.bridge else None
+    try:
+        session = Session(args.label, args.category, args.out, args.n, forced_only, parser)
+    except ValueError as e:
+        sys.exit(str(e))
     origin = args.port or args.input or "Bridge"
-    print(f"In ascolto su {origin} -> {folder}/{args.label}.NN.csv (Ctrl+C per fermare)")
+    print(f"In ascolto su {origin} -> {session.folder}/{args.label}.NN.csv (Ctrl+C per fermare)")
 
     try:
-        if args.force and not args.bridge:
-            sys.exit("--force funziona solo con --bridge (lo chiede alla MCU)")
-        if args.force and not args.n:
-            args.n = args.force
         for line in open_lines(args.port, args.input, args.baud, bridge=args.bridge, force=args.force):
-            result = parser.feed(line)
-            if isinstance(result, Rejected):
-                print(f"  ! blocco scartato: {result.reason}")
-            elif isinstance(result, Block):
-                path = save(result, folder, args.label)
-                saved += 1
-                print(f"  ok {path.name}  (picco piezo {max(result.piezo)})  [{saved} salvati]")
-                if args.n and saved >= args.n:
-                    break
+            if session.feed(line):
+                break
     except KeyboardInterrupt:
         pass
     except OSError as e:  # include serial.SerialException
         sys.exit(f"Errore di lettura da {origin}: {e}")
-    print(f"Fine: {saved} eventi salvati in {folder}")
+    print(f"Fine: {session.saved} eventi salvati in {session.folder}")
 
 
 if __name__ == "__main__":

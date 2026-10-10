@@ -15,7 +15,7 @@ from __future__ import annotations
 import math
 import statistics
 from dataclasses import dataclass
-from typing import Dict, Tuple
+from typing import Dict, Optional, Tuple
 
 from protocol import SAMPLE_PERIOD_MS, TRIGGER_INDEX, Block
 
@@ -44,6 +44,7 @@ class Detection:
     alarm: bool
     rule: str
     features: Dict[str, float]
+    confidence: Optional[float] = None   # dalla rete; None per le regole
 
 
 def extract_features(block: Block, th: Thresholds) -> Dict[str, float]:

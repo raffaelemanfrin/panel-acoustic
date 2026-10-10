@@ -4,3 +4,6 @@ truth.csv
 *.db
 __pycache__/
 sketch/test/capture_sim
+python/raccolta.json
+python/raccolta_stato.txt
+*.eim

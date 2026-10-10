@@ -70,3 +70,35 @@ python3 evaluate.py --data data/testing --adc-bits 12 --triggers-per-hour 40
 - 230400 baud: richiede di avviare `arduino-router` con `-b 230400` e `BRIDGE_BAUD 230400`
   nello sketch; con 115200 il tempo morto (~0,5 s) è già nei limiti concordati.
 - Prova senza scheda: `sketch/test/` (simulatore C++ della cattura + flusso finto a 12 bit).
+
+## Raccolta dati e rete neurale
+
+**Raccolta in App Lab** (`raccolta.py`): se esiste `python/raccolta.json`, Run avvia la
+raccolta invece del demone (il canale Bridge è di un solo processo alla volta).
+In SSH, mentre l'app gira:
+
+```bash
+cd /home/arduino/ArduinoApps/panel-acoustic/python
+echo '{"label": "grandine", "n": 30}' > raccolta.json                      # eventi da trigger
+echo '{"label": "calma", "n": 30, "force": true}' > raccolta.json           # blocchi forzati
+echo '{"label": "colpo", "n": 15, "category": "testing"}' > raccolta.json  # sessione di test
+cat raccolta_stato.txt                                                      # avanzamento
+```
+
+Con `force` si salvano solo i blocchi forzati, senza solo quelli da trigger: un evento vero
+durante una raccolta di "calma" non finisce nella classe sbagliata.
+CSV in `python/data/<category>/`; sul PC: `scp -r arduino@<ip>:/home/arduino/ArduinoApps/panel-acoustic/python/data .`
+Per tornare al demone: `rm raccolta.json` e Run.
+
+**Rete** (`nn.py`): in Edge Impulse addestrare sulla sola colonna `piezo` (2000 Hz, finestra
+250 ms, ADC 12 bit), esportare "Linux (AARCH64)" e copiare il file come `python/modello.eim`
+(`chmod +x`). Con il file presente il demone usa la rete; senza, le regole. A mano:
+
+```bash
+python3 nn.py modello.eim                                   # classi, assi, finestra del modello
+python3 daemon.py --bridge --classifier nn --model modello.eim
+python3 evaluate.py --data data/testing --classifier nn --model modello.eim   # rete
+python3 evaluate.py --data data/testing                                        # regole, per il confronto
+```
+
+Sotto `--min-conf` (0,6) la rete risponde "incerto", che non fa mai scattare l'allarme.
