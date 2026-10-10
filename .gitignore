@@ -6,3 +6,5 @@ data/
 truth.csv
 __pycache__/
 *.db
+*.db-wal
+*.db-shm
