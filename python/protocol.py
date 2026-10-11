@@ -15,7 +15,7 @@ from typing import Callable, List, Optional, Union
 
 START = "---EVENT_START---"
 END = "---EVENT_END---"
-SAMPLE_RATE_HZ = 2000
+SAMPLE_RATE_HZ = 1000
 SAMPLES_PER_BLOCK = 500
 TRIGGER_INDEX = 100  # l'impatto cade sempre sul campione 100
 SAMPLE_PERIOD_MS = 1000.0 / SAMPLE_RATE_HZ

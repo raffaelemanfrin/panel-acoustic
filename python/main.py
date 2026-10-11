@@ -37,7 +37,7 @@ if raccolta.CONFIG.exists():
     log.info("raccolta.json presente: modalita' RACCOLTA (il demone non parte)")
     target, args = raccolta.run_on_bridge, ()
 else:
-    argv = ["--bridge", "--siren", "on"]
+    argv = ["--bridge", "--siren", "off"]
     if MODEL.exists():
         argv += ["--classifier", "nn", "--model", str(MODEL)]
         log.info("modello.eim presente: classificatore = rete")

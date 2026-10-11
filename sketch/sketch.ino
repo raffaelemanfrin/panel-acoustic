@@ -33,7 +33,9 @@
 #define DEBUG_RAW       0           // 1 = solo valori grezzi sul Monitor (verifica sensori)
 
 #define ADC_BITS        12          // Linux: --adc-bits 12
-#define SAMPLE_US       500         // 2000 Hz
+#define SAMPLE_US       1000         // 2000 Hz
+#define LIGHT_EVERY 10
+#define MAX_LAG_US 4000
 #define PRE_TRIGGER     100
 #define BLOCK_LEN       500
 #define PIEZO_PIN       A0
@@ -41,8 +43,8 @@
 
 // Trigger: piezo - baseline > max(TRIG_MIN, TRIG_K x rumore medio).
 // Lo sketch di prova chiamava "urto piccolo" un picco > 3 a 10 bit = 12 a 12 bit.
-#define TRIG_MIN        12          // conteggi a 12 bit
-#define TRIG_K          6.0f
+#define TRIG_MIN        40          // conteggi a 12 bit
+#define TRIG_K          0.0f
 
 #define FORCE_PIN       2           // a GND = blocchi forzati; -1 per disabilitarlo
 #define FORCED_GAP_MS   1000
@@ -57,6 +59,7 @@ static CaptureConfig make_config() {
   CaptureConfig c;
   c.min_thr = TRIG_MIN;
   c.k_noise = TRIG_K;
+  c.confirm=1;
   return c;
 }
 static EventCapture<PRE_TRIGGER, BLOCK_LEN> capture(make_config());
@@ -170,13 +173,18 @@ void loop() {
 
 void loop() {
   // attesa attiva fino al prossimo istante di campionamento (500 us)
+  
   while ((int32_t)(micros() - g_next_us) < 0) {
   }
   g_next_us += SAMPLE_US;
 
+  static int16_t luce = 0;
+  static uint8_t light_count = 0;
   Sample s;
   s.piezo = (uint16_t)analogRead(PIEZO_PIN);
-  s.luce = (int16_t)analogRead(LIGHT_PIN);
+  if (light_count == 0) luce = (int16_t)analogRead(LIGHT_PIN);
+  light_count = (light_count + 1) % LIGHT_EVERY;
+  s.luce = luce;
   g_samples++;
 
   bool was_capturing = capture.capturing();
@@ -191,9 +199,8 @@ void loop() {
   }
 
   // in ritardo di piu' di un periodo: base dei tempi persa, il blocco in corso si scarta
-  if ((int32_t)(micros() - g_next_us) > SAMPLE_US) {
+  if ((int32_t)(micros() - g_next_us) > MAX_LAG_US) {
     g_overruns++;
-    capture.abort();
     g_next_us = micros();
   }
 
@@ -213,6 +220,7 @@ void loop() {
     capture.abort();            // la stampa salta qualche campione: pre-trigger da rifare
     g_next_us = micros();
   }
+
 }
 
 #endif
