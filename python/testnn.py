@@ -153,7 +153,7 @@ class CollectorTest(unittest.TestCase):
             d = Path(d)
             forced = []
             c = Collector(config=d / "raccolta.json", out=d / "data", status=d / "stato.txt",
-                          request_force=forced.append, adc_bits=10)
+                          request_force=forced.append, adc_bits=12)
             for l in lines("colpo", 1):             # nessuna configurazione: ignorato
                 c.feed(l)
             self.assertFalse((d / "data").exists())

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Flusso continuo finto per capture_sim: "piezo,luce" a 2000 Hz, ADC 12 bit.
 
-Piezo polarizzato a meta' scala con rumore, vento a tratti e, ogni tanto, un
+Piezo collegato direttamente all'ADC (a riposo ~0, solo semionde positive) con rumore, vento a tratti e, ogni tanto, un
 evento (colpo, grandine, ombra+colpo). Gli istanti veri degli eventi vanno su
 stderr come "# evento <campione> <classe>", per controllare l'allineamento.
     python3 stream_sim.py --seconds 30 | ./capture_sim | python3 ../../python/daemon.py --input -
@@ -22,7 +22,7 @@ def main():
     a = p.parse_args()
     rng = random.Random(a.seed)
     n = int(a.seconds * FS)
-    mid, k = 2048, 4.0  # 12 bit: ampiezze dei dati finti (scala 10 bit) x4
+    k = 4.0  # 12 bit: ampiezze dei dati finti (scala 10 bit) x4; piezo non polarizzato
 
     events = []
     t = int(2.0 * FS)  # 1 s di riscaldamento del trigger + margine
@@ -45,7 +45,7 @@ def main():
             shadows.append((t0 - 20, t0 + 600))
 
     out = sys.stdout
-    light0 = 800
+    light0 = 480  # partitore 100k/10k sul pannello
     for i in range(n):
         v = rng.gauss(0, 2)
         for (t0, amp, dec, f) in hits:
@@ -54,8 +54,8 @@ def main():
                 v += amp * math.exp(-tt / dec) * math.sin(2 * math.pi * f * tt / 1000)
         light = light0 + rng.gauss(0, 1.5)
         if any(s <= i < e for s, e in shadows):
-            light -= 120
-        pz = int(round(min(max(mid + v * k, 0), 4095)))
+            light -= 90
+        pz = int(round(min(max(v * k, 0), 4095)))
         out.write(f"{pz},{int(round(light))}\n")
 
 

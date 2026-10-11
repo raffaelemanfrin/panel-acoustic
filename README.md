@@ -39,7 +39,7 @@ cd python
 python3 -m unittest testprotocol testpersona3 testdaemon testlogic
 python3 logic.py
 # demo senza scheda (due terminali)
-python3 fakemcu.py --n 500 --order random --interval 0.5 | python3 daemon.py --input - --adc-bits 10 --siren silent
+python3 fakemcu.py --n 500 --order random --interval 0.5 | python3 daemon.py --input - --siren silent
 python3 dashboard.py          # http://<ip-uno-q>:8080
 # con la scheda (o semplicemente Run in App Lab: main.py avvia demone + dashboard)
 python3 daemon.py --bridge                          # sirena attiva di default
@@ -50,26 +50,31 @@ python3 evaluate.py --data data/testing --adc-bits 12 --triggers-per-hour 40
 
 ## Firmware MCU (`sketch/`)
 
+Circuito finale (relazione elettronica): **A0 = piezo collegato direttamente** (niente
+partitore né condensatore: a riposo ~0, solo picchi positivi), **A1 = tensione del pannello
+dal partitore 100k/10k** (5,3 V a vuoto → ~0,48 V, ~600 conteggi a 12 bit). Niente INA219.
+
 | Domanda | Risposta |
 |---|---|
-| Porta e baud lato Linux | **Nessuna tty**: sulla UNO Q l'UART interno MCU↔Linux è di `arduino-router` (115200 baud, il suo default). I blocchi arrivano come notifiche Bridge `pa_lines` sul socket `/var/run/arduino-router.sock` → `daemon.py --bridge`, `capture.py --bridge` |
+| Porta e baud lato Linux | **Nessuna tty**: sulla UNO Q l'UART interno MCU↔Linux è di `arduino-router` (115200 baud). I blocchi arrivano come notifiche Bridge `pa_lines` → `daemon.py --bridge`, `capture.py --bridge` |
 | Prima colonna | indice 0–499 → `--time-col index` (default) |
-| Bit ADC | 12 (0–4095) → `--adc-bits 12` (default di daemon e capture) |
-| Modalità forzata (calma, vento) | `capture.py --bridge --label calma --force 30`: Linux chiama `pa_force(30)` e la MCU invia 30 blocchi senza trigger, uno al secondo (riga `#FORCED` prima di ogni blocco, ignorata dal parser). In alternativa pin D2 a GND |
+| Bit ADC | 12 (0–4095) → `--adc-bits 12` (default ovunque) |
+| Modalità forzata (calma, vento) | **ponticello D2–GND**: un blocco senza trigger al secondo, con riga `#FORCED` prima (ignorata dal parser). Linux può chiederli anche con `pa_force`, ma la MCU campiona senza pause e potrebbe non rispondere: il ponticello funziona sempre |
 
-- Piezo campionato a 2000 Hz da un thread cooperativo ad alta priorità (non da una ISR:
-  `analogRead` sulla UNO Q usa il driver ADC di Zephyr, che non si può chiamare in interrupt).
-- Trigger adattivo: |piezo − baseline| > max(40, 6 × rumore medio); baseline e rumore
-  si aggiornano solo a riposo. Funziona con piezo polarizzato a metà scala o riferito a GND.
-- Luce = tensione di shunt dell'INA219 (registro 0x01, 10 µV/LSB), letta nel `loop()` a ~1 kHz
-  e campionata-e-tenuta in ogni riga. `LIGHT_INA219 0` usa invece `analogRead(A1)`.
-- Blocco: trigger all'indice 100, 100 + 400 campioni; tempo morto ~0,5 s per l'invio.
+- Tutto nel `loop()`, come lo sketch di prova: attesa su `micros()` ogni 500 µs, `analogRead(A0)` e `analogRead(A1)`.
+- Trigger: piezo − baseline > max(`TRIG_MIN` = 12, 6 × rumore rms), confermato da 2 campioni
+  sopra soglia entro 4 (un picco isolato di rumore non basta; con il segnale raddrizzato un urto
+  ad alta frequenza ha lobi di un solo campione). Il trigger è il primo campione sopra soglia → indice 100.
+- `DEBUG_RAW 1`: nessun blocco, stampa sul Monitor picco del piezo e luce ogni 100 ms, come lo
+  sketch di prova. È il primo controllo dei sensori e serve a scegliere `TRIG_MIN`
+  (sopra il valore a riposo, sotto un colpo leggero).
+- Ogni 10 s il Monitor mostra campioni/s (deve essere ~2000), baseline, rumore, soglia, trigger, ritardi.
 - D7 alto dal trigger alla fine dell'invio (latenza all'oscilloscopio).
-- Ogni 10 s il Monitor di App Lab mostra campioni/s, baseline, rumore, soglia, trigger,
-  ritardi di campionamento ed errori I²C: è il primo controllo da fare sulla scheda.
-- 230400 baud: richiede di avviare `arduino-router` con `-b 230400` e `BRIDGE_BAUD 230400`
-  nello sketch; con 115200 il tempo morto (~0,5 s) è già nei limiti concordati.
 - Prova senza scheda: `sketch/test/` (simulatore C++ della cattura + flusso finto a 12 bit).
+
+Lato Python le regole sono adattate al piezo solo positivo (pioggia e vento si separano
+contando gli impulsi invece degli attraversamenti dello zero) e le soglie di luce sono in
+conteggi di A1. Sono tarate sui dati finti: vanno ritarate sulle prime registrazioni vere.
 
 ## Raccolta dati e rete neurale
 
@@ -80,7 +85,7 @@ In SSH, mentre l'app gira:
 ```bash
 cd /home/arduino/ArduinoApps/panel-acoustic/python
 echo '{"label": "grandine", "n": 30}' > raccolta.json                      # eventi da trigger
-echo '{"label": "calma", "n": 30, "force": true}' > raccolta.json           # blocchi forzati
+echo '{"label": "calma", "n": 30, "force": true}' > raccolta.json           # blocchi forzati (+ ponticello D2-GND)
 echo '{"label": "colpo", "n": 15, "category": "testing"}' > raccolta.json  # sessione di test
 cat raccolta_stato.txt                                                      # avanzamento
 ```

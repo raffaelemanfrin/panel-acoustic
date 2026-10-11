@@ -59,6 +59,14 @@ class BridgeSourceTest(unittest.TestCase):
         next(gen)
         self.assertEqual(fb.calls, [(FORCE_METHOD, (30,))])
 
+    def test_force_senza_risposta_non_blocca(self):
+        class Muta(FakeBridge):
+            def call(self, name, *args):
+                raise TimeoutError("la MCU non risponde")
+        fb = Muta()
+        gen = bridge_lines(bridge=fb, force=10, timeout=0.01)
+        self.assertEqual(next(gen), "")       # la raccolta continua (ponticello D2-GND)
+
     def test_notifiche_da_un_altro_thread(self):
         fb = FakeBridge()
         gen = bridge_lines(bridge=fb, timeout=0.5)

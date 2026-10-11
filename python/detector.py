@@ -4,8 +4,12 @@ Prende un Block (500 campioni, trigger all'indice 100) e restituisce la classe.
 classify() guarda SOLO il piezo, come la rete: cosi' regole e rete sono
 intercambiabili come ingresso nn_alarm della logica (logic.py). La luce entra
 nella decisione solo attraverso light_flags() -> light_fast / light_slow.
-Le soglie in Thresholds sono scalate su 10 bit (0-1023): con un ADC a 12 bit
-si imposta adc_bits=12 e le ampiezze vengono riportate sulla stessa scala.
+Le soglie del piezo in Thresholds sono scritte su scala 10 bit (0-1023) e
+riportate in automatico alla risoluzione dell'ADC (adc_bits, 12 per lo sketch).
+Il piezo e' collegato direttamente all'ADC: a riposo ~0 e solo picchi
+positivi, quindi niente attraversamenti dello zero; pioggia e vento si
+separano contando gli impulsi (salite sopra pulse_hi con isteresi).
+Le soglie della luce sono in conteggi grezzi del partitore del pannello.
 
 ATTENZIONE: i valori di default sono tarati sui blocchi di fakemcu.py. Servono
 a far girare la pipeline; vanno ritarati sui dati reali della MCU.
@@ -25,17 +29,18 @@ ALARM_CLASSES = {"grandine", "colpo"}
 
 @dataclass
 class Thresholds:
-    adc_bits: int = 10
+    adc_bits: int = 12
     calm_rms: float = 4.0           # sotto questo rms post-trigger: calma
     hit_thr: float = 80.0           # ampiezza minima per contare un urto
     hit_gap_ms: float = 8.0         # urti piu' vicini di cosi' sono lo stesso urto
     colpo_max_len_ms: float = 40.0  # un colpo si smorza in fretta
     grandine_min_hits: int = 3      # numero di urti distinti per dire grandine
-    zcr_rain: float = 0.15          # attraversamenti dello zero per campione (pioggia = rumore fitto)
-    zcr_band: float = 2.0           # isteresi per non contare il rumore di fondo
+    pulse_hi: float = 10.0          # un impulso inizia sopra questo livello...
+    pulse_lo: float = 3.0           # ...e finisce sotto questo (isteresi)
+    pulse_rain: float = 0.08        # impulsi per campione: pioggia = tanti impulsi piccoli
     impact_min_amp: float = 130.0   # sotto questo picco un "urto" e' solo oscillazione (disturbo)
-    light_fast_drop: float = 10.0   # calo luce rapido (ombra) entro 30 ms dal trigger
-    light_slow_drop: float = 4.0    # calo luce lento (nuvola) a fine blocco
+    light_fast_drop: float = 44.0   # calo luce rapido (ombra) entro 30 ms dal trigger, conteggi A1
+    light_slow_drop: float = 15.0   # calo luce lento (nuvola) a fine blocco, conteggi A1
 
 
 @dataclass
@@ -71,17 +76,17 @@ def extract_features(block: Block, th: Thresholds) -> Dict[str, float]:
             last = i
     first_len_ms = (first_end - first_start + 1) * SAMPLE_PERIOD_MS if hits else 0.0
 
-    # attraversamenti dello zero con isteresi: alti per rumore fitto, bassi per vento
-    crossings, state = 0, 0
+    # impulsi con isteresi: tanti per la pioggia (gocce + rumore fitto), pochi per il vento
+    pulses, up = 0, False
     for v in post:
-        s = 1 if v > th.zcr_band else (-1 if v < -th.zcr_band else 0)
-        if s and state and s != state:
-            crossings += 1
-        if s:
-            state = s
-    zcr = crossings / len(post)
+        if not up and v > th.pulse_hi:
+            pulses += 1
+            up = True
+        elif up and v < th.pulse_lo:
+            up = False
+    pulse_rate = pulses / len(post)
 
-    return {"amp": amp, "rms": rms, "hits": hits, "first_len_ms": first_len_ms, "zcr": zcr,
+    return {"amp": amp, "rms": rms, "hits": hits, "first_len_ms": first_len_ms, "pulse_rate": pulse_rate,
             **light_features(block, th)}
 
 
@@ -123,8 +128,8 @@ def classify(block: Block, th: Thresholds = None) -> Detection:
             cls, rule = "colpo", "urto singolo e breve"
     elif f["rms"] < th.calm_rms:
         cls, rule = "calma", "rms basso"
-    elif f["zcr"] >= th.zcr_rain:
-        cls, rule = "pioggia", "rumore fitto sotto soglia"
+    elif f["pulse_rate"] >= th.pulse_rain:
+        cls, rule = "pioggia", "tanti impulsi sotto soglia"
     else:
         cls, rule = "vento", "oscillazione lenta sotto soglia"
 

@@ -4,6 +4,10 @@
 ATTENZIONE: le forme d'onda sono inventate, servono solo a far girare la
 pipeline (parser, SQLite, soglie, dashboard). NON addestrare la rete su questi dati.
 
+Imitano il circuito finale: piezo collegato direttamente all'ADC (a riposo ~0,
+solo semionde positive, ADC a 12 bit) e luce = tensione del pannello dal
+partitore 100k/10k (~400-550 conteggi a 12 bit).
+
 Esempi:
     python fake_mcu.py --n 10 --seed 1
     python fake_mcu.py --n 20 --classes grandine,colpo --interval 1 --corrupt-rate 0.2
@@ -31,12 +35,14 @@ def impulse(i, t0, amp, decay_ms, freq_hz):
     return amp * math.exp(-t / decay_ms) * math.sin(2 * math.pi * freq_hz * t / 1000.0)
 
 
-def gen_block(cls, rng, adc_bits=10, n=SAMPLES_PER_BLOCK, shadow=False):
-    """Ritorna le righe (indice, piezo, luce). Ampiezze pensate su scala 10 bit.
+LIGHT_K = 4.4  # luce: unita' "storiche" (~110) -> conteggi a 12 bit del partitore (~480)
+
+
+def gen_block(cls, rng, adc_bits=12, n=SAMPLES_PER_BLOCK, shadow=False):
+    """Ritorna le righe (indice, piezo, luce). Ampiezze del piezo pensate su scala 10 bit.
 
     shadow=True aggiunge un'ombra rapida al trigger (mano sul vetro) a qualunque classe.
     """
-    mid = 2 ** (adc_bits - 1)
     full = 2 ** adc_bits - 1
     k = 2 ** adc_bits / 1024.0
     light0 = rng.randint(95, 125)
@@ -77,8 +83,8 @@ def gen_block(cls, rng, adc_bits=10, n=SAMPLES_PER_BLOCK, shadow=False):
         for h in hits:
             v += impulse(i, *h)
 
-        p = int(round(min(max(mid + v * k, 0), full)))
-        rows.append((i, p, int(round(light))))
+        p = int(round(min(max(v * k, 0), full)))  # niente polarizzazione: il negativo si perde
+        rows.append((i, p, int(round(light * LIGHT_K))))
     return rows
 
 
@@ -101,7 +107,7 @@ def main():
     p.add_argument("--n", type=int, default=10, help="numero di blocchi")
     p.add_argument("--classes", default=",".join(CLASSES), help="classi separate da virgola")
     p.add_argument("--order", choices=["cycle", "random"], default="cycle")
-    p.add_argument("--adc-bits", type=int, default=10)
+    p.add_argument("--adc-bits", type=int, default=12)
     p.add_argument("--seed", type=int, default=None)
     p.add_argument("--interval", type=float, default=0.0, help="secondi di pausa tra blocchi")
     p.add_argument("--corrupt-rate", type=float, default=0.0, help="frazione di blocchi da rovinare")

@@ -12,7 +12,8 @@ Ogni volta che il file cambia parte una nuova sessione; l'avanzamento si
 legge nella console Python di App Lab e in raccolta_stato.txt.
 
 Campi: label (obbligatorio), n (default 30), category ("training"/"testing"),
-force (true = blocchi senza trigger, uno al secondo: per calma e vento).
+force (true = blocchi senza trigger, uno al secondo: per calma e vento; se la
+MCU non risponde alla richiesta, mettere il ponticello D2-GND per la durata della raccolta).
 I CSV finiscono in python/data/<category>/<label>.NN.csv. Per portarli sul PC:
     scp -r arduino@<ip>:/home/arduino/ArduinoApps/panel-acoustic/python/data .
 Per tornare al demone: rm raccolta.json e di nuovo Run.
@@ -27,7 +28,6 @@ from typing import Callable, Iterator, Optional
 
 from capture import Session
 from protocol import BlockParser
-from source import FORCE_METHOD
 
 HERE = Path(__file__).resolve().parent
 CONFIG = HERE / "raccolta.json"
@@ -119,10 +119,10 @@ class Collector:
 
 def run_on_bridge() -> None:
     """Usata da main.py: un solo collegamento al router per tutte le sessioni."""
-    from source import _open_bridge, bridge_lines
+    from source import _open_bridge, bridge_lines, request_force
 
     bridge, close = _open_bridge()
     try:
-        Collector(request_force=lambda n: bridge.call(FORCE_METHOD, int(n))).run(bridge_lines(bridge=bridge))
+        Collector(request_force=lambda n: request_force(bridge, n)).run(bridge_lines(bridge=bridge))
     finally:
         close()

@@ -181,7 +181,7 @@ def parse_args(argv=None):
     p.add_argument("--seed", type=int, default=1, help="(--fake) seme")
     p.add_argument("--shadow-rate", type=float, default=0.0,
                    help="(--fake) frazione di blocchi con un'ombra rapida aggiunta (mano sul vetro)")
-    p.add_argument("--adc-bits", type=int, default=10)
+    p.add_argument("--adc-bits", type=int, default=12)
     p.add_argument("--baud", type=int, default=230400)
     p.add_argument("--shadow-alarm", action="store_true", help="ombra senza urto = allarme")
     p.add_argument("--triggers-per-hour", type=float, default=None,

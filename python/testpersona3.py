@@ -9,7 +9,7 @@ from protocol import SAMPLE_PERIOD_MS, Block
 from storage import AlarmStore
 
 
-def make_block(cls, seed, adc_bits=10):
+def make_block(cls, seed, adc_bits=12):
     rows = gen_block(cls, random.Random(seed), adc_bits)
     return Block([i * SAMPLE_PERIOD_MS for i in range(len(rows))], [r[1] for r in rows], [r[2] for r in rows])
 

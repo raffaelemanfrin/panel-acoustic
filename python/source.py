@@ -57,6 +57,18 @@ def _open_bridge() -> Tuple[object, Callable[[], None]]:
     return b, b.disconnect
 
 
+def request_force(bridge, n: int) -> bool:
+    """Chiede alla MCU n blocchi forzati. Se non risponde (il loop() della MCU
+    campiona senza pause e puo' non servire le chiamate) basta il ponticello D2-GND."""
+    try:
+        bridge.call(FORCE_METHOD, int(n))
+        return True
+    except Exception as e:  # timeout, metodo non disponibile, ...
+        print(f"pa_force non riuscita ({e}): metti il ponticello D2-GND per i blocchi forzati",
+              file=sys.stderr)
+        return False
+
+
 def bridge_lines(method: str = BRIDGE_METHOD, force: int = 0, timeout: float = 1.0,
                  bridge=None) -> Iterator[str]:
     """Righe del protocollo ricevute dal Bridge. "" ogni `timeout` s senza dati.
@@ -76,7 +88,7 @@ def bridge_lines(method: str = BRIDGE_METHOD, force: int = 0, timeout: float = 1
     bridge.provide(method, on_chunk)
     try:
         if force:
-            bridge.call(FORCE_METHOD, int(force))
+            request_force(bridge, force)
         while True:
             try:
                 yield lines.get(timeout=timeout)

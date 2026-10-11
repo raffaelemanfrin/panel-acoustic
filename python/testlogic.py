@@ -175,7 +175,7 @@ class EvaluateTest(unittest.TestCase):
                     f.write("timestamp,piezo,luce\n")
                     f.writelines(f"{i * 0.5:g},{p},{l}\n" for i, p, l in rows)
             (Path(d) / "corto.01.csv").write_text("timestamp,piezo,luce\n0,512,100\n")
-            samples = list(from_csv([d], adc_bits=10))
+            samples = list(from_csv([d], adc_bits=12))
             self.assertEqual(sorted(s[0] for s in samples), ["colpo", "vento"])  # il corto e' scartato
             conf, alarm, *_ = evaluate(iter(samples), classify, light_flags, Logic())
             self.assertEqual((alarm["tp"], alarm["tn"]), (1, 1))
