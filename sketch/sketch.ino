@@ -42,7 +42,7 @@
 #define BLOCK_LEN       500
 #define PIEZO_PIN       A0
 
-#define LIGHT_INA219    1           // 1 = INA219 su I2C; 0 = partitore su LIGHT_PIN (prototipo)
+#define LIGHT_INA219    10          // 1 = INA219 su I2C; 0 = partitore su LIGHT_PIN (prototipo)
 #define LIGHT_PIN       A1
 #define INA219_ADDR     0x40
 #define LIGHT_PERIOD_US 1000        // lettura luce ~1 kHz (una conversione INA219 a 12 bit = 532 us)
